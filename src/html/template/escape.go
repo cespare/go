@@ -9,9 +9,17 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"strings"
 	"text/template"
 	"text/template/parse"
 )
+
+var indent int
+
+func p(format string, args ...interface{}) {
+	format = strings.Repeat("  ", indent) + format
+	fmt.Printf(format, args...)
+}
 
 // escapeTemplate rewrites the named template, which must be
 // associated with t, to guarantee that the output of any of the named
@@ -19,8 +27,11 @@ import (
 // been modified. Otherwise the named templates have been rendered
 // unusable.
 func escapeTemplate(tmpl *Template, node parse.Node, name string) error {
+	p("escapeTemplate: %v\n", tmpl.Name())
 	e := newEscaper(tmpl)
+	indent++
 	c, _ := e.escapeTree(context{}, node, name, 0)
+	indent--
 	var err error
 	if c.err != nil {
 		err, c.err.Name = c.err, name
@@ -435,11 +446,15 @@ func (e *escaper) escapeBranch(c context, n *parse.BranchNode, nodeName string) 
 
 // escapeList escapes a list template node.
 func (e *escaper) escapeList(c context, n *parse.ListNode) context {
+	p("e.escapeList: len=%v\n", len(n.Nodes))
 	if n == nil {
 		return c
 	}
 	for _, m := range n.Nodes {
+		p("e.escapeList: el=%v\n", m)
+		indent++
 		c = e.escape(c, m)
+		indent--
 	}
 	return c
 }
@@ -449,6 +464,7 @@ func (e *escaper) escapeList(c context, n *parse.ListNode) context {
 // It returns the best guess at an output context, and the result of the filter
 // which is the same as whether e was updated.
 func (e *escaper) escapeListConditionally(c context, n *parse.ListNode, filter func(*escaper, context) bool) (context, bool) {
+	p("e.escapeListConditionally: len=%v\n", len(n.Nodes))
 	e1 := newEscaper(e.tmpl)
 	// Make type inferences available to f.
 	for k, v := range e.output {
@@ -482,7 +498,11 @@ func (e *escaper) escapeListConditionally(c context, n *parse.ListNode, filter f
 
 // escapeTemplate escapes a {{template}} call node.
 func (e *escaper) escapeTemplate(c context, n *parse.TemplateNode) context {
+	p("e.escapeTemplate: %v\n", n.Name)
+	indent++
 	c, name := e.escapeTree(c, n, n.Name, n.Line)
+	indent--
+	//p("e.escapeTree gave name: %v\n", name)
 	if name != n.Name {
 		e.editTemplateNode(n, name)
 	}
@@ -495,6 +515,7 @@ func (e *escaper) escapeTree(c context, node parse.Node, name string, line int) 
 	// Mangle the template name with the input context to produce a reliable
 	// identifier.
 	dname := c.mangle(name)
+	p("e.escapeTree: name=%s; dname=%s\n", name, dname)
 	e.called[dname] = true
 	if out, ok := e.output[dname]; ok {
 		// Already escaped.
@@ -533,12 +554,18 @@ func (e *escaper) escapeTree(c context, node parse.Node, name string, line int) 
 // context while storing any inferences in e.
 func (e *escaper) computeOutCtx(c context, t *template.Template) context {
 	// Propagate context over the body.
+	p("e.computeOutCtx: %s\n", t.Name())
+	indent++
 	c1, ok := e.escapeTemplateBody(c, t)
+	indent--
 	if !ok {
 		// Look for a fixed point by assuming c1 as the output context.
+		p("e.computeOutCtx: !ok\n")
+		indent++
 		if c2, ok2 := e.escapeTemplateBody(c1, t); ok2 {
 			c1, ok = c2, true
 		}
+		indent--
 		// Use c1 as the error context if neither assumption worked.
 	}
 	if !ok && c1.state != stateError {
@@ -554,16 +581,20 @@ func (e *escaper) computeOutCtx(c context, t *template.Template) context {
 // context, and returns the best guess at the output context and whether the
 // assumption was correct.
 func (e *escaper) escapeTemplateBody(c context, t *template.Template) (context, bool) {
+	p("e.escapeTemplateBody: %s\n", t.Name())
 	filter := func(e1 *escaper, c1 context) bool {
 		if c1.state == stateError {
+			//p("filter: A\n")
 			// Do not update the input escaper, e.
 			return false
 		}
 		if !e1.called[t.Name()] {
+			//p("filter: B\n")
 			// If t is not recursively called, then c1 is an
 			// accurate output context.
 			return true
 		}
+		//p("filter: C\n")
 		// c1 is accurate if it matches our assumed output context.
 		return c.eq(c1)
 	}
@@ -572,7 +603,11 @@ func (e *escaper) escapeTemplateBody(c context, t *template.Template) (context, 
 	// Naively assuming that the input context is the same as the output
 	// works >90% of the time.
 	e.output[t.Name()] = c
-	return e.escapeListConditionally(c, t.Tree.Root, filter)
+	indent++
+	ctx, ok := e.escapeListConditionally(c, t.Tree.Root, filter)
+	indent--
+	p("e.escapeTemplateBody: ok=%v\n", ok)
+	return ctx, ok
 }
 
 // delimEnds maps each delim to a string of characters that terminate it.

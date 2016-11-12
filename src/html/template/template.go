@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sync"
 	"text/template"
@@ -259,7 +260,7 @@ func (t *Template) Clone() (*Template, error) {
 	ret.set[ret.Name()] = ret
 	for _, x := range textClone.Templates() {
 		name := x.Name()
-		if name == ret.Name() {
+		if os.Getenv("TEMPLATE_FIX") == "1" && name == ret.Name() {
 			continue
 		}
 		src := t.set[name]
