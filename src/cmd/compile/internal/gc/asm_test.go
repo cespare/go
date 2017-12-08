@@ -572,6 +572,14 @@ var linuxAMD64Tests = []*asmTest{
 		`,
 		[]string{"\tBTQ\t\\$60"},
 	},
+	{
+		`
+		func f72(a uint64) bool {
+			return (a>>60)&1 != 0
+		}
+		`,
+		[]string{"\tBTQ\t\\$60"},
+	},
 	// Intrinsic tests for math/bits
 	{
 		`
